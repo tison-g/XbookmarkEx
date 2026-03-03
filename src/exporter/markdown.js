@@ -22,6 +22,8 @@ export function generateMarkdown(tweet, savedMedia, classification, attachmentsF
         `name: "${escapeYaml(tweet.author.name)}"`,
         `date: ${date}`,
         `url: "${tweet.url}"`,
+        tweet.statusUrl && tweet.isArticle ? `status_url: "${tweet.statusUrl}"` : null,
+        `type: "${tweet.isArticle ? 'article' : 'tweet'}"`,
         `category: ${category}`,
         `tags: [${tags.map(t => `"${t}"`).join(', ')}]`,
         tweet.likeCount != null ? `likes: ${tweet.likeCount}` : null,
@@ -30,8 +32,9 @@ export function generateMarkdown(tweet, savedMedia, classification, attachmentsF
         '---',
     ].filter(Boolean).join('\n');
 
-    // Header
-    const header = `# [@${tweet.author.screenName}](https://x.com/${tweet.author.screenName}) · ${date}`;
+    // Header - show article badge for X Articles
+    const typeIcon = tweet.isArticle ? '📝 ' : '';
+    const header = `# ${typeIcon}[@${tweet.author.screenName}](https://x.com/${tweet.author.screenName}) · ${date}`;
 
     // Tweet text body
     const body = tweet.text || '_（无文字内容）_';

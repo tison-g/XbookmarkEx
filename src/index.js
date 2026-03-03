@@ -5,7 +5,7 @@ import chalk from 'chalk';
 import cliProgress from 'cli-progress';
 
 import { fetchAllBookmarks } from './twitter/api.js';
-import { parseTweet } from './twitter/parser.js';
+import { parseTweet, fetchArticleContentFromFxTwitter } from './twitter/parser.js';
 import { downloadMedia } from './exporter/media.js';
 import { saveBookmark, getAttachmentsDir } from './exporter/markdown.js';
 import { classifyTweet } from './ai/classifier.js';
@@ -59,7 +59,10 @@ async function main() {
     console.log(chalk.bold.cyan('\n📚 XbookmarkEx — X Bookmark Exporter\n'));
 
     const config = await loadConfig();
-    const cookies = config.twitter;
+    const cookies = {
+        ...config.twitter,
+        _queryId: config.twitter?.query_id || null,
+    };
     const vaultPath = path.resolve(config.output.vault_path);
     const attachmentsFolder = config.output.attachments_folder ?? 'attachments';
 
@@ -76,13 +79,31 @@ async function main() {
         console.log(chalk.gray(`  Last run: ${state.lastRun}\n`));
     }
 
+    // Build fetch options from config
+    const maxCount = config.fetch?.max_count ?? 200;
+    const dateFrom = config.fetch?.date_from ? new Date(config.fetch.date_from) : null;
+    const dateTo = config.fetch?.date_to ? new Date(config.fetch.date_to) : null;
+
+    // In incremental mode, automatically set dateFrom to last successful run
+    // (skip this when doing a full re-export or when user set an explicit date_from)
+    const autoDateFrom = (!FULL_EXPORT && !dateFrom && state.lastRun)
+        ? new Date(state.lastRun)
+        : dateFrom;
+
     // Fetch bookmarks
     console.log(chalk.blue('⬇ Fetching bookmarks from X...'));
+    if (autoDateFrom) console.log(chalk.gray(`  Since: ${autoDateFrom.toLocaleDateString()}`));
+    if (maxCount) console.log(chalk.gray(`  Limit: ${maxCount} bookmarks`));
     let totalFetched = 0;
 
-    const rawTweets = await fetchAllBookmarks(cookies, (tweets, page) => {
-        totalFetched += tweets.length;
-        process.stdout.write(`\r  Fetched ${totalFetched} bookmarks (page ${page})...`);
+    const rawTweets = await fetchAllBookmarks(cookies, {
+        maxCount,
+        dateFrom: autoDateFrom,
+        dateTo,
+        onPage: (tweets, page) => {
+            totalFetched += tweets.length;
+            process.stdout.write(`\r  Fetched ${totalFetched} bookmarks (page ${page})...`);
+        },
     });
     console.log(`\r${chalk.green('✓')} Fetched ${chalk.bold(rawTweets.length)} bookmarks total.\n`);
 
@@ -126,7 +147,22 @@ async function main() {
         bar.update(exported, { tweet: `@${tweet.author.screenName}: ${shortText}…` });
 
         try {
-            // 1. Classify with AI
+            // 1. For X Articles: always fetch full body from FxTwitter to get rich Markdown
+            if (tweet.isArticle) {
+                console.log(`\nDEBUG: Fetching article ${tweet.id} from FxTwitter...`);
+                const fxtwitterData = await fetchArticleContentFromFxTwitter(tweet.id);
+                if (fxtwitterData) {
+                    tweet.text = fxtwitterData.text;
+                    // Fix author if missing in the original GraphQL response
+                    if (tweet.author.screenName === 'unknown' && fxtwitterData.author.screenName) {
+                        tweet.author.screenName = fxtwitterData.author.screenName;
+                        tweet.author.name = fxtwitterData.author.name || '';
+                        tweet.url = `https://x.com/${tweet.author.screenName}/article/${tweet.id}`;
+                    }
+                }
+            }
+
+            // 2. Classify with AI
             const classification = SKIP_AI
                 ? { category: '其他', tags: [] }
                 : await classifyTweet(tweet.text, config.gemini.api_key);
@@ -134,17 +170,17 @@ async function main() {
             // Small delay to respect Gemini rate limits
             if (!SKIP_AI) await new Promise(r => setTimeout(r, 300));
 
-            // 2. Download media
+            // 3. Download media
             let savedMedia = [];
             if (!SKIP_MEDIA && tweet.media.length > 0) {
                 const attachDir = getAttachmentsDir(vaultPath, classification.category, attachmentsFolder);
                 savedMedia = await downloadMedia(tweet.media, attachDir, tweet.id);
             }
 
-            // 3. Save markdown
+            // 4. Save markdown
             await saveBookmark(tweet, vaultPath, classification, savedMedia, attachmentsFolder);
 
-            // 4. Mark as exported
+            // 5. Mark as exported
             markExported(state, tweet.id);
             exported++;
         } catch (err) {

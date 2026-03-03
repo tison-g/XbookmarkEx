@@ -20,3 +20,9 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Debug files
+debug_*.json
+
+# Exported bookmarks
+XBookMarks/
