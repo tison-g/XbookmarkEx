@@ -1,0 +1,13 @@
+{
+    "twitter": {
+        "auth_token": "PASTE_YOUR_AUTH_TOKEN_HERE",
+        "ct0": "PASTE_YOUR_CT0_HERE"
+    },
+    "gemini": {
+        "api_key": "PASTE_YOUR_GEMINI_API_KEY_HERE"
+    },
+    "output": {
+        "vault_path": "G:/ObsidianVault/Bookmarks",
+        "attachments_folder": "attachments"
+    }
+}

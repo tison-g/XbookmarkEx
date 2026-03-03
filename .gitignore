@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Sensitive config - contains Twitter cookies and API keys
+config.json
+
+# Agents/skills folder (project-specific AI configuration)
+.agents/
+
+# Temporary files
+.tmp/
+
+# State file (user-specific export state)
+.xbookmarkex-state.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

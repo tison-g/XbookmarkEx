@@ -1,0 +1,19 @@
+{
+  "name": "xbookmarkex",
+  "version": "1.0.0",
+  "description": "Export X (Twitter) bookmarks to Obsidian Markdown with AI categorization",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "export": "node src/index.js",
+    "export:full": "node src/index.js --full"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "@google/generative-ai": "^0.21.0",
+    "fs-extra": "^11.2.0",
+    "chalk": "^5.3.0",
+    "cli-progress": "^3.12.0"
+  }
+}
