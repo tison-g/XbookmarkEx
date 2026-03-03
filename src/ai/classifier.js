@@ -16,23 +16,13 @@ const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models'
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 
 const CLASSIFICATION_PROMPT = (text, categories) => `
-Analyze the following tweet and classify it. Respond ONLY with valid JSON, no markdown, no explanation.
+You are a content classifier. Analyze the tweet below and classify it into EXACTLY ONE of these categories: ${categories.join(', ')}
 
-Categories to choose from: ${categories.join(', ')}
-
-Tweet:
+Tweet content:
 ${text}
 
-Respond with exactly this JSON structure:
-{
-  "category": "<one category from the list above>",
-  "tags": ["tag1", "tag2", "tag3"]
-}
-
-Rules:
-- Choose the single most relevant category
-- Tags should be 2-5 short English or Chinese keywords
-- If the tweet is in Chinese, prefer Chinese tags
+Respond ONLY with a single line of text in this exact format, with no markdown, quotes, or JSON:
+CategoryName|tag1,tag2,tag3
 `.trim();
 
 /**
@@ -67,17 +57,18 @@ export async function classifyTweet(text, apiKey, model) {
             const raw = res.data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
             if (!raw) throw new Error('Empty response from Gemini');
 
-            // Strip markdown code fences if model wraps in them
-            const jsonStr = raw.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
-            const parsed = JSON.parse(jsonStr);
+            // Expecting format: "CategoryName|tag1,tag2,tag3"
+            const parts = raw.split('|');
+            const categoryStr = parts[0]?.trim() || '';
+            const tagsStr = parts[1]?.trim() || '';
 
             // Validate category is in our list
-            const category = CATEGORIES.includes(parsed.category)
-                ? parsed.category
+            const category = CATEGORIES.includes(categoryStr)
+                ? categoryStr
                 : '其他';
 
-            const tags = Array.isArray(parsed.tags)
-                ? parsed.tags.map(t => String(t)).slice(0, 5)
+            const tags = tagsStr
+                ? tagsStr.split(',').map(t => String(t).trim()).filter(Boolean).slice(0, 5)
                 : [];
 
             return { category, tags };
