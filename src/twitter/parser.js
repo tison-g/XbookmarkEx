@@ -168,6 +168,7 @@ export async function fetchArticleContentFromFxTwitter(tweetId) {
 
         return {
             text: markdown.trim(),
+            title: res.data.tweet?.article?.title || null,
             author: {
                 screenName: res.data.tweet?.author?.screen_name,
                 name: res.data.tweet?.author?.name,

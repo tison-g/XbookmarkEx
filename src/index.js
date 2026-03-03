@@ -153,6 +153,7 @@ async function main() {
                 const fxtwitterData = await fetchArticleContentFromFxTwitter(tweet.id);
                 if (fxtwitterData) {
                     tweet.text = fxtwitterData.text;
+                    tweet.articleTitle = fxtwitterData.title;
                     // Fix author if missing in the original GraphQL response
                     if (tweet.author.screenName === 'unknown' && fxtwitterData.author.screenName) {
                         tweet.author.screenName = fxtwitterData.author.screenName;
@@ -163,9 +164,13 @@ async function main() {
             }
 
             // 2. Classify with AI
+            const classificationText = tweet.articleTitle
+                ? `Title: ${tweet.articleTitle}\n\nContent:\n${tweet.text}`
+                : tweet.text;
+
             const classification = SKIP_AI
                 ? { category: '其他', tags: [] }
-                : await classifyTweet(tweet.text, config.gemini.api_key);
+                : await classifyTweet(classificationText, config.gemini.api_key);
 
             // Small delay to respect Gemini rate limits
             if (!SKIP_AI) await new Promise(r => setTimeout(r, 300));

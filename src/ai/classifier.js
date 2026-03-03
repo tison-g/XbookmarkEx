@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import axios from 'axios';
 
 // Predefined categories (can be extended by user)
 export const CATEGORIES = [
@@ -11,6 +11,9 @@ export const CATEGORIES = [
     '学习与教育',
     '其他',
 ];
+
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+const DEFAULT_MODEL = 'gemini-2.5-flash';
 
 const CLASSIFICATION_PROMPT = (text, categories) => `
 Analyze the following tweet and classify it. Respond ONLY with valid JSON, no markdown, no explanation.
@@ -33,26 +36,36 @@ Rules:
 `.trim();
 
 /**
- * Classify a single tweet using Gemini AI.
- * @param {string} text - tweet text
+ * Classify a single tweet using Gemini AI via REST API.
+ * @param {string} text - tweet text (or article title + text)
  * @param {string} apiKey - Gemini API key
+ * @param {string} [model] - Gemini model name (default: gemini-2.5-flash)
  * @returns {{ category: string, tags: string[] }}
  */
-export async function classifyTweet(text, apiKey) {
+export async function classifyTweet(text, apiKey, model) {
     if (!text || text.trim().length < 5) {
         return { category: '其他', tags: [] };
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-
-    const prompt = CLASSIFICATION_PROMPT(text.slice(0, 1000), CATEGORIES);
+    const modelName = model || DEFAULT_MODEL;
+    const url = `${GEMINI_API_URL}/${modelName}:generateContent?key=${apiKey}`;
+    const prompt = CLASSIFICATION_PROMPT(text.slice(0, 1500), CATEGORIES);
 
     let lastError;
     for (let attempt = 1; attempt <= 3; attempt++) {
         try {
-            const result = await model.generateContent(prompt);
-            const raw = result.response.text().trim();
+            const res = await axios.post(url, {
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                    temperature: 0.1,
+                    maxOutputTokens: 512,
+                },
+            }, {
+                timeout: 15000,
+            });
+
+            const raw = res.data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+            if (!raw) throw new Error('Empty response from Gemini');
 
             // Strip markdown code fences if model wraps in them
             const jsonStr = raw.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
@@ -78,6 +91,6 @@ export async function classifyTweet(text, apiKey) {
     }
 
     // Fallback after all retries
-    console.warn(`  ⚠ Gemini classification failed: ${lastError?.message}. Using "其他".`);
+    console.warn(`  ⚠ Gemini classification failed: ${lastError?.message?.slice(0, 80)}. Using "其他".`);
     return { category: '其他', tags: [] };
 }

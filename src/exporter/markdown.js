@@ -93,13 +93,25 @@ export function generateMarkdown(tweet, savedMedia, classification, attachmentsF
 export async function saveBookmark(tweet, vaultPath, classification, savedMedia, attachmentsFolder) {
     const { category } = classification;
     const date = tweet.createdAt.slice(0, 10);
+    const author = tweet.author.screenName;
 
     const categoryDir = path.join(vaultPath, category);
     const attachmentsDir = path.join(categoryDir, attachmentsFolder);
     await ensureDir(categoryDir);
     await ensureDir(attachmentsDir);
 
-    const filename = `${date}-${tweet.id}.md`;
+    let filename = '';
+    if (tweet.isArticle && tweet.articleTitle) {
+        // Articles use title strategy: Date-Author-Title.md
+        let safeTitle = sanitizeFilename(tweet.articleTitle).slice(0, 40).trim();
+        if (!safeTitle) safeTitle = tweet.id; // fallback
+        filename = `${date}-${author}-${safeTitle}.md`;
+    } else {
+        // Regular tweets use Date-Author-IdSuffix.md
+        const idSuffix = String(tweet.id).slice(-6);
+        filename = `${date}-${author}-${idSuffix}.md`;
+    }
+
     const filePath = path.join(categoryDir, filename);
 
     const content = generateMarkdown(tweet, savedMedia, classification, attachmentsFolder);
@@ -117,4 +129,9 @@ export function getAttachmentsDir(vaultPath, category, attachmentsFolder) {
 
 function escapeYaml(str) {
     return String(str ?? '').replace(/"/g, '\\"');
+}
+
+function sanitizeFilename(str) {
+    // Replace invalid Windows characters /\:*?"<>| and newlines with a dash
+    return String(str ?? '').replace(/[\\/:*?"<>|\n\r]/g, '-').trim();
 }
