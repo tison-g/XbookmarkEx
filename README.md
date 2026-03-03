@@ -30,17 +30,30 @@ npm install
 {
   "twitter": {
     "auth_token": "your_auth_token",
-    "ct0": "your_ct0_token"
+    "ct0": "your_ct0_token",
+    "query_id": "VFdMm9iVZxlU6hD86gfW_A"
   },
   "gemini": {
     "api_key": "your_gemini_api_key"
   },
+  "fetch": {
+    "max_count": 20,
+    "date_from": "2026-01-01",
+    "date_to": "2026-02-01"
+  },
   "output": {
-    "vault_path": "G:/ObsidianVault/Bookmarks",
+    "vault_path": "./XBookMarks",
     "attachments_folder": "attachments"
   }
 }
 ```
+
+### 核心参数详解
+
+- **twitter.query_id**: 抓取书签接口的 GraphQL Hash。如果你遇到频繁报错 404，可能是 X 官方更新了 Hash，可以按 F12 抓取你的 Bookmarks 请求并替换为最新的 Hash。
+- **fetch.max_count**: 每次执行脚本时，建议向 X 服务器请求拉取的最多书签数量（如果不填默认拉 20 条），避免一次拉取几千条导致账号风控。
+- **fetch.date_from / date_to**: 【可选】限定抓取书签的时间范围，格式为 `YYYY-MM-DD`。非常适合用于补录或者限定导出特定时间段的书签数据。
+- **output.vault_path**: 你希望保存到电脑的哪个实际目录。支持绝对路径（如 `G:/ObsidianVault/Bookmarks`）或相对路径（如 `./XBookMarks`）。
 
 ### 如何获取 Twitter Cookie
 
