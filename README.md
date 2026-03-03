@@ -5,8 +5,10 @@
 ## 特性
 
 - ✅ 完全免费（使用浏览器 Cookie，无需官方 API）
+- ✅ 完美支持长文章（X Articles/Note Tweets）无损排版与完整抓取
 - ✅ 增量导出（只导出新增书签）
-- ✅ AI 自动分类（Gemini 1.5 Flash）
+- ✅ AI 自动深度分类（Gemini 2.5 Flash REST API）
+- ✅ 智能文件命名（长文章应用真实标题，推文防重复命名）
 - ✅ 下载图片和视频
 - ✅ Obsidian 兼容 Markdown（`![[图片]]` 语法）
 
@@ -58,7 +60,7 @@ npm install
 2. 点击 **Create API Key**
 3. 复制 Key 填入 `gemini.api_key`
 
-> Gemini 1.5 Flash 有免费额度，每天 1500 次请求，满足个人使用。
+> 最新的 Gemini 2.5 Flash 大模型提供慷慨的每天 1500 次调用免费额度，本项目使用原生的 `v1beta` REST API 直连，分类快速精准。
 
 ## 使用
 
@@ -81,7 +83,8 @@ node src/index.js --no-ai
 ```
 ObsidianVault/Bookmarks/
 ├── AI与机器学习/
-│   ├── 2025-03-01-1234567890.md
+│   ├── 2026-03-02-ohxiyu-17个改动省掉上万thinking tokens.md  ← 文章类型文件（带标题）
+│   ├── 2026-02-28-cryptoxiao-341932.md ← 短推文类型文件
 │   └── attachments/
 │       └── 1234567890-photo-1.jpg
 ├── 编程与开发/
@@ -100,8 +103,10 @@ ObsidianVault/Bookmarks/
 ---
 id: "1234567890"
 author: "@username"
+name: "User Real Name"
 date: 2025-03-01
 url: "https://x.com/username/status/1234567890"
+type: "tweet"
 category: AI与机器学习
 tags: ["AI", "LLM", "工具"]
 likes: 234
@@ -112,7 +117,7 @@ media:
 
 # [@username](https://x.com/username) · 2025-03-01
 
-推文的完整文字内容...
+推文的完整文字内容... 长文章则会包含完美的 Markdown 标题、加粗和代码块排版！
 
 ![[1234567890-photo-1.jpg]]
 
