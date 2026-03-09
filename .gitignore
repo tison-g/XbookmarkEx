@@ -23,6 +23,7 @@ Thumbs.db
 
 # Debug files
 debug_*.json
+test_*.js
 
 # Exported bookmarks
 XBookMarks/

@@ -8,7 +8,9 @@ export const CATEGORIES = [
     '科技资讯',
     '商业与创业',
     '生活与娱乐',
+    '股票与投资',
     '学习与教育',
+    'Openclaw专题',
     '其他',
 ];
 
@@ -16,13 +18,14 @@ const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models'
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 
 const CLASSIFICATION_PROMPT = (text, categories) => `
-You are a content classifier. Analyze the tweet below and classify it into EXACTLY ONE of these categories: ${categories.join(', ')}
+You are a precise content classifier. Analyze the tweet below and return exactly a JSON object (no markdown formatting, no code blocks) with the following fields:
+- "category": EXACTLY ONE of these main categories: ${categories.join(', ')}
+- "subcategory": A specific, short sub-category name (1-4 words) that fits this tweet best.
+- "tags": An array of 1 to 5 hierarchical tags (e.g., ["AI/Prompt", "Dev/NodeJS"]).
+- "summary": A concise one-sentence summary (摘要) of the tweet's core point, in Chinese.
 
 Tweet content:
 ${text}
-
-Respond ONLY with a single line of text in this exact format, with no markdown, quotes, or JSON:
-CategoryName|tag1,tag2,tag3
 `.trim();
 
 /**
@@ -48,7 +51,18 @@ export async function classifyTweet(text, apiKey, model) {
                 contents: [{ parts: [{ text: prompt }] }],
                 generationConfig: {
                     temperature: 0.1,
-                    maxOutputTokens: 512,
+                    maxOutputTokens: 1024,
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            category: { type: "STRING" },
+                            subcategory: { type: "STRING" },
+                            tags: { type: "ARRAY", items: { type: "STRING" } },
+                            summary: { type: "STRING" }
+                        },
+                        required: ["category", "subcategory", "tags", "summary"]
+                    }
                 },
             }, {
                 timeout: 15000,
@@ -57,21 +71,22 @@ export async function classifyTweet(text, apiKey, model) {
             const raw = res.data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
             if (!raw) throw new Error('Empty response from Gemini');
 
-            // Expecting format: "CategoryName|tag1,tag2,tag3"
-            const parts = raw.split('|');
-            const categoryStr = parts[0]?.trim() || '';
-            const tagsStr = parts[1]?.trim() || '';
+            const data = JSON.parse(raw);
 
             // Validate category is in our list
-            const category = CATEGORIES.includes(categoryStr)
-                ? categoryStr
+            const category = CATEGORIES.includes(data.category)
+                ? data.category
                 : '其他';
 
-            const tags = tagsStr
-                ? tagsStr.split(',').map(t => String(t).trim()).filter(Boolean).slice(0, 5)
+            const subcategory = data.subcategory || '默认分类';
+
+            const tags = Array.isArray(data.tags)
+                ? data.tags.map(t => String(t).trim()).filter(Boolean).slice(0, 5)
                 : [];
 
-            return { category, tags };
+            const summary = data.summary || '';
+
+            return { category, subcategory, tags, summary };
         } catch (err) {
             lastError = err;
             if (attempt < 3) {
@@ -83,5 +98,5 @@ export async function classifyTweet(text, apiKey, model) {
 
     // Fallback after all retries
     console.warn(`  ⚠ Gemini classification failed: ${lastError?.message?.slice(0, 80)}. Using "其他".`);
-    return { category: '其他', tags: [] };
+    return { category: '其他', subcategory: '默认分类', tags: [], summary: '' };
 }

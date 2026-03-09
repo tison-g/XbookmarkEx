@@ -7,11 +7,11 @@
   "scripts": {
     "start": "node src/index.js",
     "export": "node src/index.js",
-    "export:full": "node src/index.js --full"
+    "export:full": "node src/index.js --full",
+    "reorganize": "node reorganize.js"
   },
   "dependencies": {
     "axios": "^1.7.9",
-    "@google/generative-ai": "^0.21.0",
     "fs-extra": "^11.2.0",
     "chalk": "^5.3.0",
     "cli-progress": "^3.12.0"
