@@ -7,7 +7,7 @@ import cliProgress from 'cli-progress';
 import { fetchAllBookmarks } from './twitter/api.js';
 import { parseTweet, fetchArticleContentFromFxTwitter } from './twitter/parser.js';
 import { downloadMedia } from './exporter/media.js';
-import { saveBookmark, getAttachmentsDir } from './exporter/markdown.js';
+import { saveBookmark, getAttachmentsDir, generateShareSummary, generateExportIndex } from './exporter/markdown.js';
 import { classifyTweet } from './ai/classifier.js';
 import { loadState, saveState, isExported, markExported } from './storage/state.js';
 
@@ -84,8 +84,6 @@ async function main() {
     const dateFrom = config.fetch?.date_from ? new Date(config.fetch.date_from) : null;
     const dateTo = config.fetch?.date_to ? new Date(config.fetch.date_to) : null;
 
-    // In incremental mode, automatically set dateFrom to last successful run
-    // (skip this when doing a full re-export or when user set an explicit date_from)
     const autoDateFrom = (!FULL_EXPORT && !dateFrom && state.lastRun)
         ? new Date(state.lastRun)
         : dateFrom;
@@ -142,19 +140,25 @@ async function main() {
     let exported = 0;
     let failed = 0;
 
+    // Collect exported items for index & summary generation
+    const exportedItems = [];
+    const shareTweets = [];
+    const shareClassifications = [];
+
     for (const tweet of newTweets) {
         const shortText = tweet.text.slice(0, 40).replace(/\n/g, ' ');
         bar.update(exported, { tweet: `@${tweet.author.screenName}: ${shortText}…` });
 
         try {
-            // 1. For X Articles: always fetch full body from FxTwitter to get rich Markdown
+            // 1. For X Articles: fetch full body from FxTwitter
             if (tweet.isArticle) {
-                console.log(`\nDEBUG: Fetching article ${tweet.id} from FxTwitter...`);
                 const fxtwitterData = await fetchArticleContentFromFxTwitter(tweet.id);
                 if (fxtwitterData) {
                     tweet.text = fxtwitterData.text;
                     tweet.articleTitle = fxtwitterData.title;
-                    // Fix author if missing in the original GraphQL response
+                    if (fxtwitterData.media && fxtwitterData.media.length > 0) {
+                        tweet.media = [...(tweet.media || []), ...fxtwitterData.media];
+                    }
                     if (tweet.author.screenName === 'unknown' && fxtwitterData.author.screenName) {
                         tweet.author.screenName = fxtwitterData.author.screenName;
                         tweet.author.name = fxtwitterData.author.name || '';
@@ -169,8 +173,12 @@ async function main() {
                 : tweet.text;
 
             const classification = SKIP_AI
-                ? { category: '其他', tags: [] }
-                : await classifyTweet(classificationText, config.gemini.api_key);
+                ? { tweet_type: tweet.isArticle ? 'article' : 'original', category: '其它', subcategory: '', filename_hint: '未分类', summary: '', tags: [] }
+                : await classifyTweet(classificationText, config.gemini.api_key, tweet.isArticle);
+
+            if (tweet.isArticle && classification.tweet_type !== 'article') {
+                classification.tweet_type = 'article';
+            }
 
             // Small delay to respect Gemini rate limits
             if (!SKIP_AI) await new Promise(r => setTimeout(r, 300));
@@ -178,14 +186,21 @@ async function main() {
             // 3. Download media
             let savedMedia = [];
             if (!SKIP_MEDIA && tweet.media.length > 0) {
-                const attachDir = getAttachmentsDir(vaultPath, classification.category, attachmentsFolder);
+                const attachDir = getAttachmentsDir(vaultPath, classification, attachmentsFolder);
                 savedMedia = await downloadMedia(tweet.media, attachDir, tweet.id);
             }
 
             // 4. Save markdown
-            await saveBookmark(tweet, vaultPath, classification, savedMedia, attachmentsFolder);
+            const { filePath, filename } = await saveBookmark(tweet, vaultPath, classification, savedMedia, attachmentsFolder);
 
-            // 5. Mark as exported
+            // 5. Track for summary & index
+            exportedItems.push({ tweet, classification, filePath, filename });
+            if (classification.tweet_type === 'share') {
+                shareTweets.push(tweet);
+                shareClassifications.push(classification);
+            }
+
+            // 6. Mark as exported
             markExported(state, tweet.id);
             exported++;
         } catch (err) {
@@ -198,6 +213,23 @@ async function main() {
 
     bar.stop();
 
+    // ── Post-export: generate summary & index ─────────────────────────────────
+    // Share summary file
+    if (shareTweets.length > 0) {
+        const summaryPath = await generateShareSummary(shareTweets, shareClassifications, vaultPath);
+        if (summaryPath) {
+            console.log(chalk.cyan(`  📋 分享汇总：${path.basename(summaryPath)}`));
+        }
+    }
+
+    // Export index/catalog
+    if (exportedItems.length > 0) {
+        const indexPath = await generateExportIndex(exportedItems, vaultPath);
+        if (indexPath) {
+            console.log(chalk.cyan(`  📑 导出目录：${path.basename(indexPath)}`));
+        }
+    }
+
     // Save state
     state.lastRun = new Date().toISOString();
     await saveState(vaultPath, state);
@@ -208,6 +240,12 @@ async function main() {
     console.log(`  ${chalk.green('●')} 新导出：${chalk.bold(exported)} 条`);
     if (skipped > 0) console.log(`  ${chalk.gray('●')} 已跳过：${skipped} 条（增量）`);
     if (failed > 0) console.log(`  ${chalk.red('●')} 失败：${failed} 条`);
+
+    // Category breakdown
+    const articleCount = exportedItems.filter(i => i.classification.tweet_type === 'article').length;
+    const originalCount = exportedItems.filter(i => i.classification.tweet_type === 'original').length;
+    const shareCount = exportedItems.filter(i => i.classification.tweet_type === 'share').length;
+    console.log(`  ${chalk.blue('●')} 文章：${articleCount} | 原创：${originalCount} | 分享：${shareCount}`);
     console.log(`  ${chalk.blue('●')} 保存位置：${vaultPath}\n`);
 }
 

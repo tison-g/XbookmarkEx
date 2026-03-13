@@ -5,20 +5,22 @@
 ## 特性
 
 - ✅ 完全免费（使用浏览器 Cookie，无需官方 API）
-- ✅ 完美支持长文章（X Articles/Note Tweets）无损排版与完整抓取
-- ✅ 增量导出（只导出新增书签）
-- ✅ AI 自动深度分类（Gemini 2.5 Flash REST API）
-- ✅ 智能文件命名（长文章应用真实标题，推文防重复命名）
-- ✅ 下载图片和视频
+- ✅ 完美支持长文章（X Articles）——标题、加粗、代码块、文件树、流程图全部无损还原
+- ✅ 文章图片嵌入正文中对应位置（不是堆叠在文章末尾）
+- ✅ 增量导出（只导出新增书签，防重复）
+- ✅ AI 深度分类（Gemini 2.5 Flash REST API）+ 智能文件命名
+- ✅ 分享类推文聚合汇总，自动生成分享链接导览文件
+- ✅ 每次导出自动生成目录文件（按日期命名）
+- ✅ 下载图片和视频到 `attachments/`
 - ✅ Obsidian 兼容 Markdown（`![[图片]]` 语法）
 
 ## 安装
 
 ```bash
-# 1. 克隆 / 下载项目
+# 克隆 / 下载项目后进入目录
 cd XbookmarkEx
 
-# 2. 安装依赖
+# 安装依赖
 npm install
 ```
 
@@ -37,9 +39,8 @@ npm install
     "api_key": "your_gemini_api_key"
   },
   "fetch": {
-    "max_count": 20,
-    "date_from": "2026-01-01",
-    "date_to": "2026-02-01"
+    "max_count": 50,
+    "date_from": "2025-10-01"
   },
   "output": {
     "vault_path": "./XBookMarks",
@@ -50,22 +51,25 @@ npm install
 
 ### 核心参数详解
 
-- **twitter.query_id**: 抓取书签接口的 GraphQL Hash。如果你遇到频繁报错 404，可能是 X 官方更新了 Hash，可以按 F12 抓取你的 Bookmarks 请求并替换为最新的 Hash。
-- **fetch.max_count**: 每次执行脚本时，建议向 X 服务器请求拉取的最多书签数量（如果不填默认拉 20 条），避免一次拉取几千条导致账号风控。
-- **fetch.date_from / date_to**: 【可选】限定抓取书签的时间范围，格式为 `YYYY-MM-DD`。非常适合用于补录或者限定导出特定时间段的书签数据。
-- **output.vault_path**: 你希望保存到电脑的哪个实际目录。支持绝对路径（如 `G:/ObsidianVault/Bookmarks`）或相对路径（如 `./XBookMarks`）。
+| 参数 | 说明 |
+|------|------|
+| `twitter.auth_token` | X（Twitter）登录 Cookie，从浏览器 F12 → Application → Cookies 获取 |
+| `twitter.ct0` | X（Twitter）CSRF Token，同上获取 |
+| `twitter.query_id` | Bookmarks GraphQL Hash，X 更新时可能需要重新抓包替换 |
+| `gemini.api_key` | Gemini 2.5 Flash API Key（每天 1500 次免费额度） |
+| `fetch.max_count` | 单次拉取书签上限，建议 ≤ 50 以降低触发风控概率 |
+| `fetch.date_from` | 只导出此日期之后的书签，格式 `YYYY-MM-DD`（增量模式自动追踪，无需手动改） |
+| `fetch.date_to` | 可选，限制导出截止日期，留空表示导出到最新 |
+| `output.vault_path` | 导出目录，支持绝对路径（如 `G:/ObsidianVault/Bookmarks`）或相对路径 |
 
 ### 如何获取 Twitter Cookie
 
 1. 打开 [x.com](https://x.com) 并登录
 2. 按 `F12` 打开开发者工具
-3. 切换到 **Application**（应用程序）选项卡
-4. 左侧展开 **Cookies** → `https://x.com`
-5. 找到并复制：
-   - `auth_token` 的值 → 填入 `twitter.auth_token`
-   - `ct0` 的值 → 填入 `twitter.ct0`
+3. 切换到 **Application** → **Cookies** → `https://x.com`
+4. 找到 `auth_token` 和 `ct0`，复制对应值填入配置
 
-> ⚠️ 请妥善保管 Cookie，不要分享给他人。
+> ⚠️ 请妥善保管 Cookie，不要分享给他人。Cookie 会定期失效，失效后重新复制即可。
 
 ### 如何获取 Gemini API Key
 
@@ -73,7 +77,7 @@ npm install
 2. 点击 **Create API Key**
 3. 复制 Key 填入 `gemini.api_key`
 
-> 最新的 Gemini 2.5 Flash 大模型提供慷慨的每天 1500 次调用免费额度，本项目使用原生的 `v1beta` REST API 直连，分类快速精准。
+> Gemini 2.5 Flash 提供每天 1500 次免费调用额度，本项目使用 REST API 直连，无需额外 SDK。
 
 ## 使用
 
@@ -94,48 +98,103 @@ node src/index.js --no-ai
 ## 输出结构
 
 ```
-ObsidianVault/Bookmarks/
-├── AI与机器学习/
-│   ├── 2026-03-02-ohxiyu-17个改动省掉上万thinking tokens.md  ← 文章类型文件（带标题）
-│   ├── 2026-02-28-cryptoxiao-341932.md ← 短推文类型文件
-│   └── attachments/
-│       └── 1234567890-photo-1.jpg
-├── 编程与开发/
-├── 设计与创意/
+XBookMarks/
+├── AI/
+│   ├── ClaudeCode/
+│   │   └── 2026-03-08-AI第二大脑搭建-rwayne-280字看懂...md   ← 文章类
+│   ├── Openclaw/
+│   ├── Agent&Skill/
+│   ├── 创意设计/
+│   └── 其它AI工具/
+├── 个人成长/
 ├── 科技资讯/
-├── 商业与创业/
-├── 生活与娱乐/
-├── 学习与教育/
-├── 其他/
-└── .xbookmarkex-state.json   ← 增量状态文件，请勿删除
+├── 推文/
+│   ├── 原创/
+│   └── 分享/
+│       └── 分享汇总-2026-03-13.md                           ← 每次导出自动生成
+├── 其它/
+├── attachments/
+│   └── 1234567890-photo-1.jpg
+├── 导出目录-2026-03-13.md                                   ← 每次导出自动生成
+└── .xbookmarkex-state.json                                  ← 增量状态，请勿删除
 ```
 
-## Markdown 文件格式示例
+## 分类规则
+
+### 一、有标题的 X 文章（Article）
+
+文件名格式：`日期-内容关键词-作者-文章标题`
+
+**AI 大类**（二级分类）：
+- `ClaudeCode` — Claude Code 相关
+- `Opencode` — OpenCode / OpenClaw 相关
+- `Openclaw` — OpenClaw 相关
+- `Agent&Skill` — Agent、Skill 工具方法论
+- `创意设计` — AI 设计、生图、视频
+- `其它AI工具` — 其他 AI 工具
+
+**其他一级分类**：`个人成长`、`科技资讯`、`股票投资`、`生活娱乐`、`学习教育`、`软件工具`、`其它`
+
+### 二、短推文和无标题长推文
+
+文件名格式视内容而定：
+- **原创**（无分享链接）：`日期-一句话总结-作者`
+- **分享**（含推荐链接/工具/账号）：`日期-分享主题-作者`
+
+分享类推文会同时聚合写入 `推文/分享/分享汇总-日期.md`，方便集中查看所有分享链接。
+
+## Markdown 文件示例
+
+### 文章类（X Article）
 
 ```markdown
 ---
 id: "1234567890"
 author: "@username"
-name: "User Real Name"
-date: 2025-03-01
-url: "https://x.com/username/status/1234567890"
-type: "tweet"
-category: AI与机器学习
-tags: ["AI", "LLM", "工具"]
-likes: 234
-retweets: 45
+name: "作者昵称"
+date: 2026-03-08
+url: "https://x.com/username/article/1234567890"
+type: "article"
+category: "AI"
+subcategory: "ClaudeCode"
+tags: ["Claude", "实战"]
+summary: "一句话摘要"
+likes: 1024
+retweets: 200
 media:
   - attachments/1234567890-photo-1.jpg
 ---
 
-# [@username](https://x.com/username) · 2025-03-01
+# 文章标题
 
-推文的完整文字内容... 长文章则会包含完美的 Markdown 标题、加粗和代码块排版！
+文章正文……图片嵌入在原文对应位置：
 
 ![[1234567890-photo-1.jpg]]
 
+更多正文……
+
 ---
-[原推链接](https://x.com/username/status/1234567890)
+[原推链接](https://x.com/username/article/1234567890)
+```
+
+### 推文类
+
+```markdown
+---
+id: "9876543210"
+author: "@username"
+date: 2026-03-10
+url: "https://x.com/username/status/9876543210"
+type: "tweet"
+category: "科技资讯"
+---
+
+# 🐦 [@username](https://x.com/username) · 2026-03-10
+
+推文内容……
+
+---
+[原推链接](https://x.com/username/status/9876543210)
 ```
 
 ## 定期自动运行
@@ -143,10 +202,10 @@ media:
 ### Windows 任务计划程序
 
 1. 打开任务计划程序 → 创建基本任务
-2. 触发器：每天/每周
+2. 触发器：每天 / 每周
 3. 操作：启动程序 → `node`，参数 → `G:\project\XbookmarkEx\src\index.js`，起始于 → `G:\project\XbookmarkEx`
 
-### 命令行手动运行（每次拉一次新书签）
+### 命令行手动运行
 
 ```bash
 cd G:\project\XbookmarkEx && npm start
@@ -155,13 +214,19 @@ cd G:\project\XbookmarkEx && npm start
 ## 常见问题
 
 **Q: 提示 "Unexpected API response structure"**
-A: Cookie 已过期，请重新从浏览器复制 `auth_token` 和 `ct0`。
+A: Cookie 已过期，重新从浏览器复制 `auth_token` 和 `ct0` 填入 `config.json`。
+
+**Q: ⚠ Gemini classification failed: Unterminated string...**
+A: Gemini API 偶发 JSON 截断问题，已在代码中增加重试和容错，偶尔出现属正常，系统会自动归入"其他"分类。
 
 **Q: 视频无法下载**
-A: 某些受版权保护的视频无法下载，工具会跳过并继续。
+A: 部分受版权保护的视频无法下载，工具会跳过并继续，不影响其他内容。
 
 **Q: AI 分类不准确**
-A: 可以在 `src/ai/classifier.js` 中修改 `CATEGORIES` 数组，自定义分类名称。
+A: 可在 `src/ai/classifier.js` 中修改分类规则和 prompt，调整分类偏好。
 
 **Q: 速度很慢**
-A: 使用 `--no-ai` 跳过分类可大幅提速；或 `--no-media` 跳过媒体下载。
+A: 使用 `--no-ai` 跳过 AI 分类可大幅提速；`--no-media` 跳过图片/视频下载。
+
+**Q: 文章中的代码块/文件树/流程图丢失**
+A: 已在最新版本中修复。FxTwitter API 使用 `MARKDOWN` 类型的 atomic 块存储代码内容，当前版本已正确解析并保留。

@@ -1,48 +1,78 @@
 import axios from 'axios';
 
-// Predefined categories (can be extended by user)
-export const CATEGORIES = [
-    'AI与机器学习',
-    '编程与开发',
-    '设计与创意',
-    '科技资讯',
-    '商业与创业',
-    '生活与娱乐',
-    '股票与投资',
-    '学习与教育',
-    'Openclaw专题',
-    '其他',
+// ── Category hierarchy ────────────────────────────────────────────────────────
+// AI subcategories live under 'AI/' parent directory
+export const AI_SUBCATEGORIES = [
+    'ClaudeCode',
+    'Opencode',
+    'Openclaw',
+    'Agent&Skill',
+    '创意设计',
+    '其它AI工具',
 ];
+
+// Top-level categories (non-AI)
+export const GENERAL_CATEGORIES = [
+    '个人成长',
+    '科技资讯',
+    '股票投资',
+    '生活娱乐',
+    '学习教育',
+    '软件工具',
+    '其它',
+];
+
+// All valid category values Gemini may return
+const ALL_CATEGORIES = ['AI', ...GENERAL_CATEGORIES];
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 
-const CLASSIFICATION_PROMPT = (text, categories) => `
-You are a precise content classifier. Analyze the tweet below and return exactly a JSON object (no markdown formatting, no code blocks) with the following fields:
-- "category": EXACTLY ONE of these main categories: ${categories.join(', ')}
-- "subcategory": A specific, short sub-category name (1-4 words) that fits this tweet best.
-- "tags": An array of 1 to 5 hierarchical tags (e.g., ["AI/Prompt", "Dev/NodeJS"]).
-- "summary": A concise one-sentence summary (摘要) of the tweet's core point, in Chinese.
+const CLASSIFICATION_PROMPT = (text, isArticle) => `
+You are a precise content classifier for X (Twitter) bookmarks.
 
-Tweet content:
+## Task
+Analyze the tweet below and return a JSON object.
+
+## Return Fields
+- "tweet_type": one of "article", "share", "original"
+  - "article": long-form content with a clear title/topic (Note Tweet / X Article)
+  - "share": the tweet recommends or shares a link, tool, another user, or external resource
+  - "original": personal thoughts, commentary, or discussion without sharing external links
+${isArticle ? '  NOTE: This tweet is a confirmed X Article, so tweet_type MUST be "article".' : ''}
+- "category": one of [${ALL_CATEGORIES.map(c => `"${c}"`).join(', ')}]
+  - Use "AI" for any AI/ML/LLM/coding-assistant/prompt-engineering related content
+  - Use the most specific general category otherwise
+- "ai_sub": (ONLY when category is "AI") one of [${AI_SUBCATEGORIES.map(c => `"${c}"`).join(', ')}]
+  - ClaudeCode: Claude Code, Anthropic Claude, Claude artifacts
+  - Opencode: OpenAI Codex, GPT coding, ChatGPT coding
+  - Openclaw: Openclaw platform or related tools
+  - Agent&Skill: AI agents, MCP, skills, automation, workflows
+  - 创意设计: AI art, image generation, design tools
+  - 其它AI工具: other AI tools not fitting above
+- "filename_hint": a short Chinese phrase (4-8 chars) summarizing the core topic, suitable for a filename
+  - For articles: describe what kind of content (e.g. "AI提示词教程", "MCP开发指南")
+  - For shares: describe what is being shared (e.g. "推荐开源工具", "分享AI插件")
+  - For originals: one-sentence gist (e.g. "关于创业思考", "学习心得")
+- "summary": a concise one-sentence Chinese summary of the tweet content
+- "tags": 2-5 keyword tags in Chinese or English
+
+## Tweet Content
 ${text}
 `.trim();
 
 /**
  * Classify a single tweet using Gemini AI via REST API.
- * @param {string} text - tweet text (or article title + text)
- * @param {string} apiKey - Gemini API key
- * @param {string} [model] - Gemini model name (default: gemini-2.5-flash)
- * @returns {{ category: string, tags: string[] }}
+ * Returns { tweet_type, category, subcategory, filename_hint, summary, tags }
  */
-export async function classifyTweet(text, apiKey, model) {
+export async function classifyTweet(text, apiKey, isArticle = false, model) {
     if (!text || text.trim().length < 5) {
-        return { category: '其他', tags: [] };
+        return defaultResult();
     }
 
     const modelName = model || DEFAULT_MODEL;
     const url = `${GEMINI_API_URL}/${modelName}:generateContent?key=${apiKey}`;
-    const prompt = CLASSIFICATION_PROMPT(text.slice(0, 1500), CATEGORIES);
+    const prompt = CLASSIFICATION_PROMPT(text.slice(0, 2000), isArticle);
 
     let lastError;
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -56,16 +86,18 @@ export async function classifyTweet(text, apiKey, model) {
                     responseSchema: {
                         type: "OBJECT",
                         properties: {
+                            tweet_type: { type: "STRING" },
                             category: { type: "STRING" },
-                            subcategory: { type: "STRING" },
+                            ai_sub: { type: "STRING" },
+                            filename_hint: { type: "STRING" },
+                            summary: { type: "STRING" },
                             tags: { type: "ARRAY", items: { type: "STRING" } },
-                            summary: { type: "STRING" }
                         },
-                        required: ["category", "subcategory", "tags", "summary"]
+                        required: ["tweet_type", "category", "filename_hint", "summary", "tags"]
                     }
                 },
             }, {
-                timeout: 15000,
+                timeout: 30000,
             });
 
             const raw = res.data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
@@ -73,30 +105,55 @@ export async function classifyTweet(text, apiKey, model) {
 
             const data = JSON.parse(raw);
 
-            // Validate category is in our list
-            const category = CATEGORIES.includes(data.category)
-                ? data.category
-                : '其他';
+            // Validate tweet_type
+            const validTypes = ['article', 'share', 'original'];
+            const tweet_type = validTypes.includes(data.tweet_type) ? data.tweet_type : 'original';
 
-            const subcategory = data.subcategory || '默认分类';
+            // Validate category
+            const category = ALL_CATEGORIES.includes(data.category) ? data.category : '其它';
+
+            // Validate AI subcategory
+            let subcategory = '';
+            if (category === 'AI') {
+                subcategory = AI_SUBCATEGORIES.includes(data.ai_sub) ? data.ai_sub : '其它AI工具';
+            }
+
+            // filename_hint: sanitize and limit length
+            const filename_hint = sanitizeHint(data.filename_hint || '未分类');
+
+            const summary = data.summary || '';
 
             const tags = Array.isArray(data.tags)
                 ? data.tags.map(t => String(t).trim()).filter(Boolean).slice(0, 5)
                 : [];
 
-            const summary = data.summary || '';
-
-            return { category, subcategory, tags, summary };
+            return { tweet_type, category, subcategory, filename_hint, summary, tags };
         } catch (err) {
             lastError = err;
             if (attempt < 3) {
-                // Wait before retry: 1s, then 2s
                 await new Promise(r => setTimeout(r, attempt * 1000));
             }
         }
     }
 
-    // Fallback after all retries
-    console.warn(`  ⚠ Gemini classification failed: ${lastError?.message?.slice(0, 80)}. Using "其他".`);
-    return { category: '其他', subcategory: '默认分类', tags: [], summary: '' };
+    console.warn(`  ⚠ Gemini classification failed: ${lastError?.message?.slice(0, 80)}. Using defaults.`);
+    return defaultResult();
+}
+
+function defaultResult() {
+    return {
+        tweet_type: 'original',
+        category: '其它',
+        subcategory: '',
+        filename_hint: '未分类',
+        summary: '',
+        tags: [],
+    };
+}
+
+function sanitizeHint(str) {
+    return String(str ?? '')
+        .replace(/[\\/:*?"<>|\n\r]/g, '')
+        .trim()
+        .slice(0, 20) || '未分类';
 }

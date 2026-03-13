@@ -83,6 +83,7 @@ export function parseTweet(rawResult) {
         quotedTweet: tweet.quoted_status_result
             ? parseTweet(tweet.quoted_status_result.result)
             : null,
+        urls: (legacy.entities?.urls ?? []).map(u => u.expanded_url || u.url).filter(Boolean),
         likeCount: legacy.favorite_count,
         retweetCount: legacy.retweet_count,
         replyCount: legacy.reply_count,
@@ -107,12 +108,48 @@ export async function fetchArticleContentFromFxTwitter(tweetId) {
             return null; // Not an article or no content
         }
 
+        // FxTwitter returns entityMap as an array [{key, value}], build a lookup dict
+        const rawEntityMap = article.content.entityMap || [];
+        const entityMap = {};
+        if (Array.isArray(rawEntityMap)) {
+            for (const entry of rawEntityMap) {
+                entityMap[entry.key] = entry.value;
+            }
+        } else {
+            // fallback: already an object
+            Object.assign(entityMap, rawEntityMap);
+        }
+
         // Convert FxTwitter blocks into Markdown
         let markdown = '';
         for (const block of article.content.blocks) {
-            if (!block.text) continue;
+            if (!block.text && (!block.entityRanges || block.entityRanges.length === 0)) continue;
 
-            let text = block.text;
+            let text = block.text || '';
+
+            // Handle atomic blocks: MEDIA, DIVIDER, MARKDOWN, etc.
+            if (block.type === 'atomic') {
+                for (const op of (block.entityRanges || [])) {
+                    const entity = entityMap[op.key];
+                    if (!entity) continue;
+                    if (entity.type === 'MEDIA') {
+                        const mediaId = entity.data?.mediaItems?.[0]?.mediaId;
+                        if (mediaId) {
+                            markdown += `![MEDIA:${mediaId}]\n\n`;
+                        }
+                    } else if (entity.type === 'DIVIDER') {
+                        markdown += `---\n\n`;
+                    } else if (entity.type === 'MARKDOWN') {
+                        // Raw markdown block (code fences, file trees, flow diagrams, etc.)
+                        const rawMd = entity.data?.markdown || entity.data?.content || '';
+                        if (rawMd.trim()) {
+                            markdown += rawMd.trimEnd() + '\n\n';
+                        }
+                    }
+                    // LINK, TWEMOJI in atomic – skip silently
+                }
+                continue; // Never fall through to normal rendering
+            }
 
             // Apply inline formatting if available
             if (block.inlineStyleRanges && block.inlineStyleRanges.length > 0) {
@@ -146,6 +183,10 @@ export async function fetchArticleContentFromFxTwitter(tweetId) {
                 case 'header-three':
                     markdown += `### ${text}\n\n`;
                     break;
+                case 'blockquote':
+                    // Render blockquote with > prefix, supporting multi-line
+                    markdown += text.split('\n').map(line => `> ${line}`).join('\n') + '\n\n';
+                    break;
                 case 'unordered-list-item':
                     markdown += `- ${text}\n`;
                     break;
@@ -166,13 +207,26 @@ export async function fetchArticleContentFromFxTwitter(tweetId) {
             }
         }
 
+        const mediaEntities = article.media_entities || [];
+        const articleMedia = mediaEntities.map(m => {
+            const url = m.media_info?.original_img_url;
+            if (!url) return null;
+            return {
+                type: 'photo',
+                url: url,
+                ext: 'jpg',
+                mediaId: m.media_id
+            };
+        }).filter(Boolean);
+
         return {
             text: markdown.trim(),
             title: res.data.tweet?.article?.title || null,
             author: {
                 screenName: res.data.tweet?.author?.screen_name,
                 name: res.data.tweet?.author?.name,
-            }
+            },
+            media: articleMedia
         };
     } catch {
         return null;

@@ -24,6 +24,8 @@ export async function downloadMedia(mediaList, outputDir, tweetId) {
         const filename = `${tweetId}-${item.type}-${i + 1}.${item.ext}`;
         const destPath = path.join(outputDir, filename);
 
+        item.localFilename = filename;
+
         // Skip if already downloaded (idempotent)
         if (await pathExists(destPath)) {
             saved.push(filename);
@@ -35,6 +37,7 @@ export async function downloadMedia(mediaList, outputDir, tweetId) {
             saved.push(filename);
         } catch (err) {
             console.warn(`  ⚠ Failed to download media ${filename}: ${err.message}`);
+            item.localFilename = null;
             // Continue without crashing
         }
     }
